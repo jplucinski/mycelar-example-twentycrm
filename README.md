@@ -33,12 +33,16 @@ curl -s http://localhost:8080/api/chat \
   -d '{"message":"search people named Ada","confirmed":false}'
 ```
 
-Creating a note is blocked until:
+"Find Ada and add a note" with `confirmed` false can search and leaves `createNote` out of the schema; the same two steps with `confirmed` true include it.
 
 ```bash
 curl -s http://localhost:8080/api/chat \
   -H 'content-type: application/json' \
-  -d '{"message":"create a note about the deal","confirmed":true}'
+  -d '{"message":"find Ada and add a note","confirmed":false}'
+
+curl -s http://localhost:8080/api/chat \
+  -H 'content-type: application/json' \
+  -d '{"message":"find Ada and add a note","confirmed":true}'
 ```
 
 ## Tests
@@ -53,7 +57,7 @@ Without Docker, Testcontainers skips `TwentyClientTest` automatically. Docker En
 
 ## Graph
 
-`twenty` contains people, companies, opportunities, and notes. Each resource contains `read` and `write` nodes, and people and notes also contain `context`. Those nodes contain the capabilities, whose `operationId` equals the Spring AI tool name. Solid arrows are `CONTAINS`, dotted arrows are `EXPANDS_TO`, and the thick arrow is `REQUIRES`. Creating a note stays blocked until advisor context `mycelar.routing.confirmed=true`.
+`twenty` contains people, companies, opportunities, and notes. Each resource contains `read` and `write` nodes, and people and notes also contain `context`. Those nodes contain the capabilities, whose `operationId` equals the Spring AI tool name. Solid arrows are `CONTAINS`, dotted arrows are `EXPANDS_TO`, the thick arrow is `REQUIRES`, and labeled arrows are `RELATES_TO`. Creating a note stays blocked until advisor context `mycelar.routing.confirmed=true`.
 
 ```mermaid
 flowchart TD
@@ -95,6 +99,11 @@ flowchart TD
   notesWrite --> createNote["create-note"]
   createNote ==> confirmBeforeSend["confirm-before-send"]
   notesContext --> communicationPolicy
+
+  peopleRead -->|RELATES_TO| peopleWrite
+  peopleRead -->|RELATES_TO| notesWrite
+  companiesRead -->|RELATES_TO| companiesWrite
+  opportunitiesRead -->|RELATES_TO| opportunitiesWrite
 ```
 
 ## Chat turn
@@ -106,6 +115,7 @@ sequenceDiagram
   actor User
   participant Chat as ChatController
   participant Advisor as MycelarAdvisor
+  participant Loop as MycelarToolCallingAdvisor
   participant Runtime as MycelarRuntime
   participant Model as ChatModel
   participant Guard as Authorizer
@@ -114,16 +124,18 @@ sequenceDiagram
 
   User->>Chat: POST /api/chat message, confirmed
   Chat->>Advisor: user text and mycelar.routing.confirmed
-  Advisor->>Runtime: intent plus RoutingContext confirmed
-  Note over Runtime: score TwentyGraph paths, then apply constraints
-  Runtime-->>Advisor: path, allowed capabilities, blocked capabilities
-  Advisor->>Advisor: operationId equals @Tool name
+  Advisor->>Runtime: route the user text
+  Runtime-->>Advisor: merged candidates
+  Note over Advisor,Model: a blocked tool is not in the schema
   Advisor->>Model: mycelar-context and allowed tools only
   alt tool is allowed
     Model->>Guard: tool call
     Guard->>Tool: capability is in the allowed snapshot
     Tool->>API: Bearer /rest
-    API-->>Model: JSON
+    API-->>Loop: JSON
+    Loop->>Runtime: route user text plus tool JSON
+    Runtime-->>Loop: merged route again
+    Loop->>Model: updated schema
     Model-->>User: ChatTurnResponse
   else tool is blocked
     Model-->>User: reply without calling that tool
@@ -132,44 +144,9 @@ sequenceDiagram
 
 ## Spring AI alone
 
-The same `POST /api/chat` with the `ToolCallbackProvider` attached directly, and no `MycelarAdvisor`. `MethodToolCallbackProvider` reflects every `@Tool` on `TwentyTools`. `ToolCallingAutoConfiguration` indexes those callbacks by name in `ToolCallbackResolver`. `ChatClient` copies the whole list onto the prompt, `OpenAiChatModel` sends every definition, and the model picks a tool from that list. `ToolCallingAdvisor` asks `ToolCallingManager` to run it: match the name on the request, or fall back to the resolver, then call the Java method. `confirmed` never filters the list, so `createNote` is callable on every turn.
+Attach `twentyToolCallbackProvider` with `.tools()` or `defaultTools` and leave out `MycelarAdvisor`. Every `@Tool` on `TwentyTools` is then on the prompt. `confirmed` does not filter that list, so `createNote` is offered on every turn.
 
-This sample's controller does not call `.tools()` itself. `MycelarAdvisor` is what puts a per-turn subset on the prompt. The diagram is the Spring path when the provider is attached with `.tools(twentyToolCallbackProvider)` or `defaultTools`.
-
-```mermaid
-sequenceDiagram
-  actor User
-  participant Chat as ChatController
-  participant Client as ChatClient
-  participant Provider as MethodToolCallbackProvider
-  participant Advisor as ToolCallingAdvisor
-  participant Model as ChatModel
-  participant Manager as ToolCallingManager
-  participant Resolver as ToolCallbackResolver
-  participant Tool as TwentyTools
-  participant API as Twenty REST
-
-  User->>Chat: POST /api/chat message
-  Chat->>Client: prompt user text and the provider
-  Client->>Provider: getToolCallbacks
-  Note over Provider: every @Tool method on TwentyTools
-  Provider-->>Client: full callback list
-  Client->>Advisor: prompt carrying every callback
-  Advisor->>Model: name, description, and schema for each tool
-  Model->>Advisor: tool call chosen from the full list
-  Advisor->>Manager: executeToolCalls
-  alt name is on this request
-    Manager->>Manager: callback whose name matches
-  else name is only in the bean index
-    Manager->>Resolver: resolve name
-    Resolver-->>Manager: callback from any ToolCallbackProvider
-  end
-  Manager->>Tool: MethodToolCallback.call
-  Tool->>API: Bearer /rest
-  API-->>Model: JSON
-  Note over Advisor,Model: repeat until the model returns text
-  Model-->>User: ChatTurnResponse
-```
+This sample's controller does not call `.tools()` itself. `MycelarAdvisor` is what puts the per-turn subset on the prompt.
 
 ## Graph versus the flat tool list
 
@@ -177,18 +154,14 @@ The `read` and `write` nodes are the tool boundary. Scope is the capabilities on
 
 A hit is a smaller schema plus a group instruction. The model still receives the `@Tool` name, description, and parameters for the capabilities in scope, and it also receives the capsules of the nodes on the path. `people-read` adds one sentence for that pair: search when you have a name or email, and call get only with an id already retrieved. Spring's flat list describes each tool on its own and sends all fifteen definitions on every turn. Nothing in that list appears only when the turn is about reading people.
 
-The group sentence does not choose the branch. The default matcher scores Jaccard overlap of the intent with the node id, label, and keywords. Capsule text is attached after the path wins, for the model.
+The group sentence does not choose the branch. The default matcher scores Jaccard overlap of the intent with the node id, label, description, aliases, and keywords. Capsule text is attached after the path wins, for the model.
 
-`MycelarAdvisor` runs once, before `ToolCallingAdvisor` starts the tool loop, so that subset stays fixed for the turn. "Find Ada and add a note" follows the people-read branch or the notes-write branch. With the provider attached directly, the model sees every tool and can call `searchPeople` and then `createNote` before it answers.
+With top-k 2, "find Ada and add a note" can carry `people-read` and `notes-write` on the first turn, and `create-note` stays out of the schema until `confirmed` is true. After a tool result, the next model call is scored from the user text plus that JSON. With the provider attached directly, the model sees every tool, and `confirmed` never removes `createNote`.
 
 The graph is the right mechanism when a tool must be absent from the schema, or when the catalog is large enough that sending every definition costs tokens and mixes resources. This sample has fifteen tools. The flat Spring list is enough to choose among them. The graph still supplies the confirmation gate: with `confirmed=false`, `createNote` is not offered at all.
 
 ## Several tools in one loop
 
-Three gaps keep a turn on one group. "Find Ada and add a note", and "search Ada, then update her email", each need two groups. The loop can call only the tools from the first route.
+The demo sets `mycelar.spring-ai.top-k` to 2, so one turn can carry tools from two groups. `people-read` relates to `people-write` and to `notes-write`. The company and opportunity read groups relate to their own write groups. A sentence that names both steps gets both groups on the first route. `create-note` stays blocked until `confirmed` is true.
 
-`mycelar.spring-ai.top-k` is `1`, and `MycelarAdvisor` keeps `RouteResult.primary()` even when more candidates come back. Raise `top-k` and merge those candidates: union the allowed capabilities and the capsules, and if any candidate blocks a capability, leave it blocked. One sentence that names people and a note can then carry `people-read` and `notes-write` together. `create-note` still waits for `confirmed=true`.
-
-A `CONTAINS` chain cannot hold sibling groups. `people-read` and `people-write` are both children of `people`, so search-then-update never shares a path, and the one-hop scope never grants both pairs. Add `RELATES_TO` from `people-read` to `people-write`, and from `people-read` to `notes-write`, for a sentence that names both steps. The walker already follows `RELATES_TO`, and scope includes the capability children of every node on that path. A longer path pays the default path penalty (`pathPenaltyAlpha` 0.05), so the link wins when the sentence matches both ends. It stays idle when the second tool appears only after a tool result.
-
-The loop still reuses the first tool list. `ToolCallingAdvisor` copies those callbacks onto every model call, and `MycelarAdvisor` has already returned. `MycelarRequestMapper` routes on the original user message. Route again before each model call, using that message plus the latest tool result, and replace the callback list. Keep the same `confirmed` flag, so the confirmation gate still applies after `searchPeople` returns an id.
+The second model call is scored from the user text plus the tool JSON. A `searchPeople` result by itself does not add the write group.

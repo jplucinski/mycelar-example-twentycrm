@@ -3,6 +3,7 @@ package io.mycelar.example.twenty.tool;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.mycelar.example.twenty.twenty.TwentyClient;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import org.springframework.ai.tool.annotation.Tool;
@@ -44,20 +45,30 @@ public final class TwentyTools {
                         Map.of("primaryEmail", email)));
     }
 
-    @Tool(name = "updatePerson", description = "Update one existing person by id. Send only the name or email the user asked to change, and keep every other field as it was.")
+    @Tool(name = "updatePerson", description = "Update one existing person by id. Pass null for any first name, last name, or email the user did not ask to change.")
     public String updatePerson(
             @ToolParam(description = "Person id returned by a previous search or given by the user.") String id,
-            @ToolParam(description = "Given name. Repeat the current value if the user did not ask to change it.") String firstName,
-            @ToolParam(description = "Family name. Repeat the current value if the user did not ask to change it.") String lastName,
-            @ToolParam(description = "Primary email. Repeat the current value if the user did not ask to change it.") String email) {
-        return client.patch(
-                "people",
-                id,
-                Map.of(
-                        "name",
-                        Map.of("firstName", firstName, "lastName", lastName),
-                        "emails",
-                        Map.of("primaryEmail", email)));
+            @ToolParam(description = "Given name. Null when this field stays unchanged.") String firstName,
+            @ToolParam(description = "Family name. Null when this field stays unchanged.") String lastName,
+            @ToolParam(description = "Primary email. Null when this field stays unchanged.") String email) {
+        Map<String, Object> name = new LinkedHashMap<>();
+        if (firstName != null) {
+            name.put("firstName", firstName);
+        }
+        if (lastName != null) {
+            name.put("lastName", lastName);
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        if (!name.isEmpty()) {
+            body.put("name", name);
+        }
+        if (email != null) {
+            body.put("emails", Map.of("primaryEmail", email));
+        }
+        if (body.isEmpty()) {
+            throw new IllegalArgumentException("at least one field is required");
+        }
+        return client.patch("people", id, body);
     }
 
     @Tool(name = "searchCompanies", description = "Find companies when you do not have an id. Pass a Twenty REST filter such as name[eq]:Acme. Omit the filter to list the first page.")
@@ -77,10 +88,13 @@ public final class TwentyTools {
         return client.create("companies", Map.of("name", name));
     }
 
-    @Tool(name = "updateCompany", description = "Update one existing company by id. Change the name only when the user asked for a new name.")
+    @Tool(name = "updateCompany", description = "Update one existing company by id. Pass null for the name when it stays unchanged.")
     public String updateCompany(
             @ToolParam(description = "Company id returned by a previous search or given by the user.") String id,
-            @ToolParam(description = "Company name. Repeat the current name if the user did not ask to change it.") String name) {
+            @ToolParam(description = "Company name. Null when the name stays unchanged.") String name) {
+        if (name == null) {
+            throw new IllegalArgumentException("at least one field is required");
+        }
         return client.patch("companies", id, Map.of("name", name));
     }
 
@@ -103,12 +117,22 @@ public final class TwentyTools {
         return client.create("opportunities", Map.of("name", name, "stage", stage == null ? "NEW" : stage));
     }
 
-    @Tool(name = "updateOpportunity", description = "Update one existing opportunity by id. Change only the name or stage the user named, and repeat the other field as it is now.")
+    @Tool(name = "updateOpportunity", description = "Update one existing opportunity by id. Pass null for any name or stage the user did not ask to change.")
     public String updateOpportunity(
             @ToolParam(description = "Opportunity id returned by a previous search or given by the user.") String id,
-            @ToolParam(description = "Opportunity name. Repeat the current name if the user did not ask to change it.") String name,
-            @ToolParam(description = "Pipeline stage. Repeat the current stage if the user did not ask to change it.") String stage) {
-        return client.patch("opportunities", id, Map.of("name", name, "stage", stage));
+            @ToolParam(description = "Opportunity name. Null when this field stays unchanged.") String name,
+            @ToolParam(description = "Pipeline stage. Null when this field stays unchanged.") String stage) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        if (name != null) {
+            body.put("name", name);
+        }
+        if (stage != null) {
+            body.put("stage", stage);
+        }
+        if (body.isEmpty()) {
+            throw new IllegalArgumentException("at least one field is required");
+        }
+        return client.patch("opportunities", id, body);
     }
 
     @Tool(name = "searchNotes", description = "Find notes when you do not have an id. Pass a Twenty REST filter such as title[eq]:Kickoff. Omit the filter to list the first page.")
@@ -130,15 +154,21 @@ public final class TwentyTools {
             @ToolParam(description = "Person id to link, or empty. Set at most one of person, company, or opportunity.") String personId,
             @ToolParam(description = "Company id to link, or empty. Set at most one of person, company, or opportunity.") String companyId,
             @ToolParam(description = "Opportunity id to link, or empty. Set at most one of person, company, or opportunity.") String opportunityId) {
+        int targets = targetCount(personId, companyId, opportunityId);
+        if (targets > 1) {
+            throw new IllegalArgumentException("at most one of personId, companyId, opportunityId");
+        }
         String created = client.create("notes", Map.of("title", title, "bodyV2", Map.of("markdown", markdown)));
-        String noteId = noteId(created);
-        if (!noteId.isBlank() && hasTarget(personId, companyId, opportunityId)) {
-            client.createNoteTarget(noteId, personId, companyId, opportunityId);
+        if (targets == 1) {
+            String noteId = noteId(created);
+            if (!noteId.isBlank()) {
+                client.createNoteTarget(noteId, personId, companyId, opportunityId);
+            }
         }
         return created;
     }
 
-    private static boolean hasTarget(String personId, String companyId, String opportunityId) {
+    private static int targetCount(String personId, String companyId, String opportunityId) {
         int set = 0;
         if (personId != null && !personId.isBlank()) {
             set++;
@@ -149,7 +179,7 @@ public final class TwentyTools {
         if (opportunityId != null && !opportunityId.isBlank()) {
             set++;
         }
-        return set == 1;
+        return set;
     }
 
     private static String noteId(String json) {

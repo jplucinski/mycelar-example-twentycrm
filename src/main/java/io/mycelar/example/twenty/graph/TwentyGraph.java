@@ -43,7 +43,7 @@ public final class TwentyGraph {
                         resource(
                                 "people",
                                 "people",
-                                List.of("people", "person", "contact", "contacts"),
+                                List.of("people", "person", "contact", "contacts", "email"),
                                 capsule(
                                         "cap-people",
                                         CapsuleType.DOMAIN_CONTEXT,
@@ -79,20 +79,20 @@ public final class TwentyGraph {
                                         CapsuleType.DOMAIN_CONTEXT,
                                         "A note has a title and a markdown body. Attach it to at most one target: a person, a company, or an opportunity.",
                                         20)))
-                .node(group("people-read", "read", List.of("read", "search", "find", "get", "people", "person"), "Look up people. Use search when you have a name or email and no id. Use get only with a person id you already retrieved."))
-                .node(group("people-write", "write", List.of("write", "create", "add", "update", "patch", "people", "person"), "Change people. Create a person only after search shows they are missing. On update, send only the name or email the user asked to change."))
-                .node(group("people-context", "context", List.of("context", "profile", "people", "person"), "When you mention a person, use the first name, last name, and primary email returned by the tool. Do not guess a missing email."))
-                .node(group("companies-read", "read", List.of("read", "search", "find", "get", "company", "companies"), "Look up companies. Use search when you have a name and no id. Use get only with a company id you already retrieved."))
-                .node(group("companies-write", "write", List.of("write", "create", "add", "update", "patch", "company", "companies"), "Change companies. Create a company only after search shows that name is missing. On update, change only the name the user gave."))
-                .node(group("opportunities-read", "read", List.of("read", "search", "find", "get", "opportunity", "deal"), "Look up opportunities. Use search when you have a deal name or stage and no id. Use get only with an opportunity id you already retrieved."))
-                .node(group("opportunities-write", "write", List.of("write", "create", "add", "update", "patch", "opportunity", "deal", "stage"), "Change opportunities. Create one only after search shows it is missing. On update, change only the name or stage the user gave."))
-                .node(group("notes-read", "read", List.of("read", "search", "find", "get", "note", "notes"), "Look up notes. Use search when the user described a note and you have no id. Use get only with a note id you already retrieved."))
-                .node(group("notes-write", "write", List.of("write", "create", "add", "note", "notes", "deal"), "Create a note with a title and a markdown body. If this capability is blocked, say what you would write and do not call the tool on this turn."))
-                .node(group("notes-context", "context", List.of("context", "policy", "note", "notes"), "Link a note to one person, one company, or one opportunity, never more than one. Creating a note is a write, so wait when confirmation is required."))
+                .node(group("people-read", "read", "find people", List.of("people", "person"), "Look up people. Use search when you have a name or email and no id. Use get only with a person id you already retrieved."))
+                .node(group("people-write", "write", "write people", List.of("people", "person", "email"), "Change people. Create a person only after search shows they are missing. On update, send only the name or email the user asked to change."))
+                .node(group("people-context", "context", "people context", List.of("people", "person"), "When you mention a person, use the first name, last name, and primary email returned by the tool. Do not guess a missing email."))
+                .node(group("companies-read", "read", "read companies", List.of("company", "companies"), "Look up companies. Use search when you have a name and no id. Use get only with a company id you already retrieved."))
+                .node(group("companies-write", "write", "write companies", List.of("company", "companies"), "Change companies. Create a company only after search shows that name is missing. On update, change only the name the user gave."))
+                .node(group("opportunities-read", "read", "read opportunities", List.of("opportunity", "deal"), "Look up opportunities. Use search when you have a deal name or stage and no id. Use get only with an opportunity id you already retrieved."))
+                .node(group("opportunities-write", "write", "write opportunities", List.of("opportunity", "deal", "stage"), "Change opportunities. Create one only after search shows it is missing. On update, change only the name or stage the user gave."))
+                .node(group("notes-read", "read", "read notes", List.of("note", "notes"), "Look up notes. Use search when the user described a note and you have no id. Use get only with a note id you already retrieved."))
+                .node(group("notes-write", "write", "create notes", List.of("note", "notes"), "Create a note with a title and a markdown body. If this capability is blocked, say what you would write and do not call the tool on this turn."))
+                .node(group("notes-context", "context", "notes context", List.of("note", "notes"), "Link a note to one person, one company, or one opportunity, never more than one. Creating a note is a write, so wait when confirmation is required."))
                 .node(capability("search-people", "searchPeople", "Find people when you do not have an id. Filter on name.firstName or emails.primaryEmail.", List.of("search", "find", "people", "person", "named")))
                 .node(capability("get-person", "getPerson", "Load one person by an id you already retrieved. Do not guess the id.", List.of("get", "read", "person", "people")))
                 .node(capability("create-person", "createPerson", "Create a person with first name, last name, and primary email after search shows they are missing.", List.of("create", "add", "new", "person", "people")))
-                .node(capability("update-person", "updatePerson", "Update one person by id. Change only the name or email the user asked for.", List.of("update", "patch", "person", "people")))
+                .node(capability("update-person", "updatePerson", "Update one person by id. Change only the name or email the user asked for.", List.of("update", "patch", "person", "people", "email")))
                 .node(capability("search-companies", "searchCompanies", "Find companies when you do not have an id. Filter on name.", List.of("search", "find", "company", "companies")))
                 .node(capability("get-company", "getCompany", "Load one company by an id you already retrieved. Do not guess the id.", List.of("get", "read", "company")))
                 .node(capability("create-company", "createCompany", "Create a company by name after search shows that name is missing.", List.of("create", "add", "new", "company", "named")))
@@ -116,9 +116,9 @@ public final class TwentyGraph {
                                 "updateOpportunity",
                                 "Update one opportunity by id. Change only the name or stage the user named.",
                                 List.of("update", "patch", "opportunity", "deal", "stage")))
-                .node(capability("search-notes", "searchNotes", "Find notes when you do not have an id. Filter on title or body.", List.of("search", "find", "note", "notes")))
+                .node(capability("search-notes", "searchNotes", "Find notes when you do not have an id. Filter on title or body.", List.of("search", "note", "notes")))
                 .node(capability("get-note", "getNote", "Load one note by an id you already retrieved. Do not guess the id.", List.of("get", "read", "note")))
-                .node(capability("create-note", "createNote", "Create a note with a title and markdown body. Link at most one person, company, or opportunity. Do not call this while it is blocked for confirmation.", List.of("create", "add", "write", "note", "notes", "deal")))
+                .node(capability("create-note", "createNote", "Create a note with a title and markdown body. Link at most one person, company, or opportunity. Do not call this while it is blocked for confirmation.", List.of("create", "add", "note", "notes")))
                 .node(
                         constraint(
                                 "confirm-before-send",
@@ -178,33 +178,42 @@ public final class TwentyGraph {
                 .edge(requires("create-note-confirm", "create-note", "confirm-before-send"))
                 .edge(expands("people-profile", "people", "person-profile"))
                 .edge(expands("notes-policy", "notes", "communication-policy"))
+                .edge(relates("people-read-write", "people-read", "people-write"))
+                .edge(relates("companies-read-write", "companies-read", "companies-write"))
+                .edge(relates("opportunities-read-write", "opportunities-read", "opportunities-write"))
+                .edge(relates("people-read-notes-write", "people-read", "notes-write"))
                 .build();
     }
 
     private static GraphNode domain(String id, String label, List<String> keywords, ContextCapsule capsule) {
-        return node(id, NodeType.DOMAIN, label, keywords, List.of(capsule), Optional.empty(), Optional.empty());
+        return node(id, NodeType.DOMAIN, label, label, keywords, List.of(capsule), Optional.empty(), Optional.empty());
     }
 
     private static GraphNode resource(String id, String label, List<String> keywords, ContextCapsule capsule) {
-        return node(id, NodeType.RESOURCE, label, keywords, List.of(capsule), Optional.empty(), Optional.empty());
+        return node(id, NodeType.RESOURCE, label, label, keywords, List.of(capsule), Optional.empty(), Optional.empty());
     }
 
-    private static GraphNode group(String id, String label, List<String> keywords, String text) {
-        return resource(
+    private static GraphNode group(String id, String label, String description, List<String> keywords, String text) {
+        return node(
                 id,
+                NodeType.RESOURCE,
                 label,
+                description,
                 keywords,
-                capsule("cap-" + id, CapsuleType.DOMAIN_CONTEXT, text, 15));
+                List.of(capsule("cap-" + id, CapsuleType.DOMAIN_CONTEXT, text, 15)),
+                Optional.empty(),
+                Optional.empty());
     }
 
     private static GraphNode context(String id, String label, List<String> keywords, ContextCapsule capsule) {
-        return node(id, NodeType.CONTEXT, label, keywords, List.of(capsule), Optional.empty(), Optional.empty());
+        return node(id, NodeType.CONTEXT, label, label, keywords, List.of(capsule), Optional.empty(), Optional.empty());
     }
 
     private static GraphNode capability(String id, String operationId, String description, List<String> keywords) {
         return node(
                 id,
                 NodeType.CAPABILITY,
+                id,
                 id,
                 keywords,
                 List.of(),
@@ -224,6 +233,7 @@ public final class TwentyGraph {
                 id,
                 NodeType.CONSTRAINT,
                 id,
+                id,
                 List.of(),
                 List.of(),
                 Optional.empty(),
@@ -234,6 +244,7 @@ public final class TwentyGraph {
             String id,
             NodeType type,
             String label,
+            String description,
             List<String> keywords,
             List<ContextCapsule> capsules,
             Optional<CapabilityDescriptor> capability,
@@ -241,7 +252,7 @@ public final class TwentyGraph {
         return new GraphNode(
                 new NodeId(id),
                 type,
-                new NodeMetadata(label, label, List.of(), keywords, Map.of()),
+                new NodeMetadata(label, description, List.of(), keywords, Map.of()),
                 capsules,
                 capability.orElse(null),
                 constraint.orElse(null));
@@ -257,6 +268,10 @@ public final class TwentyGraph {
 
     private static GraphEdge requires(String edgeId, String source, String target) {
         return edge(edgeId, source, target, EdgeType.REQUIRES);
+    }
+
+    private static GraphEdge relates(String edgeId, String source, String target) {
+        return edge(edgeId, source, target, EdgeType.RELATES_TO);
     }
 
     private static GraphEdge expands(String edgeId, String source, String target) {
