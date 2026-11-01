@@ -1,0 +1,19 @@
+twenty:
+  base-url: ${TWENTY_BASE_URL:https://api.twenty.com}
+  api-key: ${TWENTY_API_KEY:}
+
+spring:
+  application:
+    name: mycelar-example-twenty
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY:}
+      chat:
+        options:
+          model: gpt-4o-mini
+
+mycelar:
+  spring-ai:
+    top-k: 1
+    include-capabilities-in-context: true
+    include-blocked-in-context: true

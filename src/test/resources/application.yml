@@ -1,0 +1,9 @@
+twenty:
+  base-url: https://api.twenty.com
+  api-key: test
+spring:
+  ai:
+    openai:
+      api-key: test
+      chat:
+        enabled: false
