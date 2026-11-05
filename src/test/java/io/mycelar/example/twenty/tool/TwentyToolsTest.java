@@ -72,6 +72,28 @@ class TwentyToolsTest {
     }
 
     @Test
+    void createNoteFailsWhenCreatedNoteHasNoId() {
+        when(client.create(eq("notes"), eq(Map.of("title", "Hi", "bodyV2", Map.of("markdown", "md")))))
+                .thenReturn("{\"data\":{}}");
+        assertThatThrownBy(() -> new TwentyTools(client).createNote("Hi", "md", "p1", null, null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("note id missing from create response");
+        verify(client).create(eq("notes"), eq(Map.of("title", "Hi", "bodyV2", Map.of("markdown", "md"))));
+        verifyNoMoreInteractions(client);
+    }
+
+    @Test
+    void createNoteFailsWhenCreateResponseIsNotJson() {
+        when(client.create(eq("notes"), eq(Map.of("title", "Hi", "bodyV2", Map.of("markdown", "md")))))
+                .thenReturn("not-json");
+        assertThatThrownBy(() -> new TwentyTools(client).createNote("Hi", "md", "p1", null, null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("note id missing from create response");
+        verify(client).create(eq("notes"), eq(Map.of("title", "Hi", "bodyV2", Map.of("markdown", "md"))));
+        verifyNoMoreInteractions(client);
+    }
+
+    @Test
     void createNoteRejectsTwoOrThreeTargetsBeforeCreate() {
         TwentyTools tools = new TwentyTools(client);
         assertThatThrownBy(() -> tools.createNote("Hi", "md", "p1", "c1", null))

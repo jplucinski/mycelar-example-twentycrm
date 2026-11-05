@@ -150,18 +150,4 @@ This sample's controller does not call `.tools()` itself. `MycelarAdvisor` is wh
 
 ## Graph versus the flat tool list
 
-The `read` and `write` nodes are the tool boundary. Scope is the capabilities on the winning path plus the direct `CONTAINS` children of type `CAPABILITY`. `people` contains groups, so that node alone grants no tools. `people-read` grants `search-people` and `get-person`. `people-write` grants create and update. Companies, opportunities, and notes use the same cut. `REQUIRES` is not a walk edge: `create-note` stays out of the schema until `confirmed` is true.
-
-A hit is a smaller schema plus a group instruction. The model still receives the `@Tool` name, description, and parameters for the capabilities in scope, and it also receives the capsules of the nodes on the path. `people-read` adds one sentence for that pair: search when you have a name or email, and call get only with an id already retrieved. Spring's flat list describes each tool on its own and sends all fifteen definitions on every turn. Nothing in that list appears only when the turn is about reading people.
-
-The group sentence does not choose the branch. The default matcher scores Jaccard overlap of the intent with the node id, label, description, aliases, and keywords. Capsule text is attached after the path wins, for the model.
-
-With top-k 2, "find Ada and add a note" can carry `people-read` and `notes-write` on the first turn, and `create-note` stays out of the schema until `confirmed` is true. After a tool result, the next model call is scored from the user text plus that JSON. With the provider attached directly, the model sees every tool, and `confirmed` never removes `createNote`.
-
-The graph is the right mechanism when a tool must be absent from the schema, or when the catalog is large enough that sending every definition costs tokens and mixes resources. This sample has fifteen tools. The flat Spring list is enough to choose among them. The graph still supplies the confirmation gate: with `confirmed=false`, `createNote` is not offered at all.
-
-## Several tools in one loop
-
-The demo sets `mycelar.spring-ai.top-k` to 2, so one turn can carry tools from two groups. `people-read` relates to `people-write` and to `notes-write`. The company and opportunity read groups relate to their own write groups. A sentence that names both steps gets both groups on the first route. `create-note` stays blocked until `confirmed` is true.
-
-The second model call is scored from the user text plus the tool JSON. A `searchPeople` result by itself does not add the write group.
+`REQUIRES` is not a walk edge, so `create-note` stays out of the schema until `confirmed` is true. A flat `@Tool` list cannot express that: every method on `TwentyTools` would be offered on every turn, and `confirmed` would not remove `createNote`.

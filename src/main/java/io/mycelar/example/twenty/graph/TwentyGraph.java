@@ -89,36 +89,21 @@ public final class TwentyGraph {
                 .node(group("notes-read", "read", "read notes", List.of("note", "notes"), "Look up notes. Use search when the user described a note and you have no id. Use get only with a note id you already retrieved."))
                 .node(group("notes-write", "write", "create notes", List.of("note", "notes"), "Create a note with a title and a markdown body. If this capability is blocked, say what you would write and do not call the tool on this turn."))
                 .node(group("notes-context", "context", "notes context", List.of("note", "notes"), "Link a note to one person, one company, or one opportunity, never more than one. Creating a note is a write, so wait when confirmation is required."))
-                .node(capability("search-people", "searchPeople", "Find people when you do not have an id. Filter on name.firstName or emails.primaryEmail.", List.of("search", "find", "people", "person", "named")))
-                .node(capability("get-person", "getPerson", "Load one person by an id you already retrieved. Do not guess the id.", List.of("get", "read", "person", "people")))
-                .node(capability("create-person", "createPerson", "Create a person with first name, last name, and primary email after search shows they are missing.", List.of("create", "add", "new", "person", "people")))
-                .node(capability("update-person", "updatePerson", "Update one person by id. Change only the name or email the user asked for.", List.of("update", "patch", "person", "people", "email")))
-                .node(capability("search-companies", "searchCompanies", "Find companies when you do not have an id. Filter on name.", List.of("search", "find", "company", "companies")))
-                .node(capability("get-company", "getCompany", "Load one company by an id you already retrieved. Do not guess the id.", List.of("get", "read", "company")))
-                .node(capability("create-company", "createCompany", "Create a company by name after search shows that name is missing.", List.of("create", "add", "new", "company", "named")))
-                .node(capability("update-company", "updateCompany", "Update one company by id. Change only the name the user gave.", List.of("update", "patch", "company")))
-                .node(
-                        capability(
-                                "search-opportunities",
-                                "searchOpportunities",
-                                "Find opportunities when you do not have an id. Filter on name or stage.",
-                                List.of("search", "find", "opportunity", "deal")))
-                .node(capability("get-opportunity", "getOpportunity", "Load one opportunity by an id you already retrieved. Do not guess the id.", List.of("get", "read", "opportunity", "deal")))
-                .node(
-                        capability(
-                                "create-opportunity",
-                                "createOpportunity",
-                                "Create an opportunity with a name and a stage after search shows it is missing. Use NEW only when the user did not name a stage.",
-                                List.of("create", "add", "new", "opportunity", "deal")))
-                .node(
-                        capability(
-                                "update-opportunity",
-                                "updateOpportunity",
-                                "Update one opportunity by id. Change only the name or stage the user named.",
-                                List.of("update", "patch", "opportunity", "deal", "stage")))
-                .node(capability("search-notes", "searchNotes", "Find notes when you do not have an id. Filter on title or body.", List.of("search", "note", "notes")))
-                .node(capability("get-note", "getNote", "Load one note by an id you already retrieved. Do not guess the id.", List.of("get", "read", "note")))
-                .node(capability("create-note", "createNote", "Create a note with a title and markdown body. Link at most one person, company, or opportunity. Do not call this while it is blocked for confirmation.", List.of("create", "add", "note", "notes")))
+                .node(capability("search-people", "searchPeople", "Find people by name.firstName or emails.primaryEmail.", List.of("search", "find", "people", "person", "named")))
+                .node(capability("get-person", "getPerson", "Load one person by id.", List.of("get", "read", "person", "people")))
+                .node(capability("create-person", "createPerson", "Create a person with first name, last name, and primary email.", List.of("create", "add", "new", "person", "people")))
+                .node(capability("update-person", "updatePerson", "Update a person's name or email by id.", List.of("update", "patch", "person", "people", "email")))
+                .node(capability("search-companies", "searchCompanies", "Find companies by name.", List.of("search", "find", "company", "companies")))
+                .node(capability("get-company", "getCompany", "Load one company by id.", List.of("get", "read", "company")))
+                .node(capability("create-company", "createCompany", "Create a company by name.", List.of("create", "add", "new", "company", "named")))
+                .node(capability("update-company", "updateCompany", "Update a company's name by id.", List.of("update", "patch", "company")))
+                .node(capability("search-opportunities", "searchOpportunities", "Find opportunities by name or stage.", List.of("search", "find", "opportunity", "deal")))
+                .node(capability("get-opportunity", "getOpportunity", "Load one opportunity by id.", List.of("get", "read", "opportunity", "deal")))
+                .node(capability("create-opportunity", "createOpportunity", "Create an opportunity with a name and a stage. A missing stage is NEW.", List.of("create", "add", "new", "opportunity", "deal")))
+                .node(capability("update-opportunity", "updateOpportunity", "Update an opportunity's name or stage by id.", List.of("update", "patch", "opportunity", "deal", "stage")))
+                .node(capability("search-notes", "searchNotes", "Find notes by title or body.", List.of("search", "note", "notes")))
+                .node(capability("get-note", "getNote", "Load one note by id.", List.of("get", "read", "note")))
+                .node(capability("create-note", "createNote", "Create a note with a title and markdown body, linked to at most one target.", List.of("create", "add", "note", "notes")))
                 .node(
                         constraint(
                                 "confirm-before-send",
