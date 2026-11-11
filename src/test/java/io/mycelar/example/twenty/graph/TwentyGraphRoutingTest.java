@@ -7,7 +7,6 @@ import io.mycelar.core.constraint.ConstraintDecision;
 import io.mycelar.core.graph.NodeId;
 import io.mycelar.core.routing.MycelarRuntime;
 import io.mycelar.core.routing.RouteCandidate;
-import io.mycelar.core.routing.RouteCandidateMerger;
 import io.mycelar.core.routing.RouteRequest;
 import io.mycelar.core.routing.RoutingContext;
 import io.mycelar.example.twenty.constraint.ConfirmBeforeSendEvaluator;
@@ -36,10 +35,10 @@ class TwentyGraphRoutingTest {
                 .getFirst();
     }
 
-    private RouteCandidate merged(String intent, RoutingContext ctx) {
-        return RouteCandidateMerger.merge(
-                runtime.route(RouteRequest.builder().intent(intent).context(ctx).topK(2).build())
-                        .candidates());
+    private RouteCandidate routed(String intent, RoutingContext ctx) {
+        return runtime.route(RouteRequest.builder().intent(intent).context(ctx).topK(2).build())
+                .primary()
+                .orElseThrow();
     }
 
     @Test
@@ -84,46 +83,42 @@ class TwentyGraphRoutingTest {
 
     @Test
     void searchPeopleNamedAdaKeepsReadTools() {
-        RouteCandidate c = merged("search people named Ada", RoutingContext.empty());
+        RouteCandidate c = routed("search people named Ada", RoutingContext.empty());
         assertThat(c.capabilityScope().allowed())
-                .contains(new CapabilityId("search-people"), new CapabilityId("get-person"));
-        assertThat(c.capabilityScope().allowed())
-                .doesNotContain(
-                        new CapabilityId("create-note"),
-                        new CapabilityId("search-companies"),
-                        new CapabilityId("update-person"));
+                .containsExactlyInAnyOrder(
+                        new CapabilityId("search-people"), new CapabilityId("get-person"));
     }
 
     @Test
     void updateOpportunityStageDoesNotExposeUpdatePerson() {
-        RouteCandidate c = merged("update the opportunity stage", RoutingContext.empty());
+        RouteCandidate c = routed("update the opportunity stage", RoutingContext.empty());
         assertThat(c.capabilityScope().allowed()).contains(new CapabilityId("update-opportunity"));
         assertThat(c.capabilityScope().allowed()).doesNotContain(new CapabilityId("update-person"));
     }
 
     @Test
-    void findAdaAndUpdateEmailMergesPeopleReadAndWrite() {
-        RouteCandidate c = merged("find Ada and update her email", RoutingContext.empty());
+    void findAdaAndUpdateEmailStaysOnPeopleWrite() {
+        RouteCandidate c = routed("find Ada and update her email", RoutingContext.empty());
         assertThat(c.capabilityScope().allowed())
-                .contains(new CapabilityId("search-people"), new CapabilityId("update-person"));
-        assertThat(c.capabilityScope().allowed()).doesNotContain(new CapabilityId("create-note"));
+                .containsExactlyInAnyOrder(
+                        new CapabilityId("create-person"), new CapabilityId("update-person"));
     }
 
     @Test
-    void findAdaAndAddNoteRequiresConfirmation() {
+    void findAdaAndAddNoteStaysOnNotesWrite() {
         RouteCandidate blocked =
-                merged("find Ada and add a note", RoutingContext.of(Map.of("confirmed", false)));
-        assertThat(blocked.capabilityScope().allowed()).contains(new CapabilityId("search-people"));
+                routed("find Ada and add a note", RoutingContext.of(Map.of("confirmed", false)));
+        assertThat(blocked.capabilityScope().allowed()).isEmpty();
         assertThat(blocked.capabilityScope().blocked())
                 .anyMatch(
                         b ->
                                 b.capabilityId().equals(new CapabilityId("create-note"))
                                         && b.decision() == ConstraintDecision.REQUIRE_CONFIRMATION);
-        assertThat(blocked.capabilityScope().allowed()).doesNotContain(new CapabilityId("create-note"));
 
         RouteCandidate allowed =
-                merged("find Ada and add a note", RoutingContext.of(Map.of("confirmed", true)));
-        assertThat(allowed.capabilityScope().allowed()).contains(new CapabilityId("create-note"));
+                routed("find Ada and add a note", RoutingContext.of(Map.of("confirmed", true)));
+        assertThat(allowed.capabilityScope().allowed())
+                .containsExactly(new CapabilityId("create-note"));
         assertThat(allowed.capabilityScope().blocked()).isEmpty();
     }
 }

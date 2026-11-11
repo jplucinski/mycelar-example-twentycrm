@@ -31,13 +31,14 @@ class ChatControllerTest {
     }
 
     @Test
-    void chatReturnsModelText() throws Exception {
+    void searchPeopleRegistersOnlyThePeopleReadTools() throws Exception {
         mvc.perform(
                         post("/api/chat")
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("{\"message\":\"search people named Ada\",\"confirmed\":false}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content").value("ok"));
+        assertThat(model.lastToolNames()).containsExactlyInAnyOrder("searchPeople", "getPerson");
     }
 
     @Test
@@ -45,13 +46,13 @@ class ChatControllerTest {
         mvc.perform(post("/api/chat").contentType(MediaType.APPLICATION_JSON).content(NOTE + "false}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content").value("ok"));
-        assertThat(model.lastToolNames()).doesNotContain("createNote");
+        assertThat(model.lastToolNames()).isEmpty();
 
         model.clear();
 
         mvc.perform(post("/api/chat").contentType(MediaType.APPLICATION_JSON).content(NOTE + "true}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content").value("ok"));
-        assertThat(model.lastToolNames()).contains("createNote");
+        assertThat(model.lastToolNames()).containsExactly("createNote");
     }
 }

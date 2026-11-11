@@ -6,9 +6,9 @@ Requires a sibling checkout of [mycelar](https://github.com/jplucinski/mycelar).
 
 ## What it demonstrates
 
+- `MycelarAdvisor` puts only the routed tools on the prompt. `TwentyTools` has 15 methods; a people lookup registers `searchPeople` and `getPerson`.
 - `MycelarGraph` for Twenty people / companies / opportunities / notes
-- `MycelarAdvisor` on Spring AI `ChatClient`
-- `createNote` gated until `confirmed=true`
+- `createNote` stays off that list until `confirmed=true`, even when the route reaches notes
 - No MCP, no UI
 
 ## Requirements
@@ -33,7 +33,9 @@ curl -s http://localhost:8080/api/chat \
   -d '{"message":"search people named Ada","confirmed":false}'
 ```
 
-"Find Ada and add a note" with `confirmed` false can search and leaves `createNote` out of the schema; the same two steps with `confirmed` true include it.
+That turn registers `searchPeople` and `getPerson`. The other 13 methods stay off the schema. `confirmed` does not choose this set.
+
+A sentence that names two steps still gets one primary path. "Find Ada and update her email" registers `createPerson` and `updatePerson`. "Find Ada and add a note" stays on notes: with `confirmed` false the schema is empty, and with `confirmed` true it is only `createNote`.
 
 ```bash
 curl -s http://localhost:8080/api/chat \
@@ -57,7 +59,7 @@ Without Docker, Testcontainers skips `TwentyClientTest` automatically. Docker En
 
 ## Graph
 
-`twenty` contains people, companies, opportunities, and notes. Each resource contains `read` and `write` nodes, and people and notes also contain `context`. Those nodes contain the capabilities, whose `operationId` equals the Spring AI tool name. Solid arrows are `CONTAINS`, dotted arrows are `EXPANDS_TO`, the thick arrow is `REQUIRES`, and labeled arrows are `RELATES_TO`. Creating a note stays blocked until advisor context `mycelar.routing.confirmed=true`.
+`twenty` contains people, companies, opportunities, and notes. Each resource contains `read` and `write` nodes, and people and notes also contain `context`. Those nodes contain the capabilities, whose `operationId` equals the Spring AI tool name. The prompt receives the capabilities on the primary path, plus capability children of the groups on that path. Solid arrows are `CONTAINS`, dotted arrows are `EXPANDS_TO`, the thick arrow is `REQUIRES`, and labeled arrows are `RELATES_TO`. `REQUIRES` can still drop a reached capability: `create-note` stays blocked until `mycelar.routing.confirmed=true`.
 
 ```mermaid
 flowchart TD
@@ -108,7 +110,7 @@ flowchart TD
 
 ## Chat turn
 
-`POST /api/chat` puts the user text on the prompt and `confirmed` on `mycelar.routing.confirmed`. `MycelarAdvisor` routes that text through the graph, keeps only the allowed capabilities, and the model can call only those tools. A blocked capability, such as `create-note` when `confirmed` is false, is described in the prompt and is not registered as a tool.
+`POST /api/chat` puts the user text on the prompt and `confirmed` on `mycelar.routing.confirmed`. `MycelarAdvisor` routes that text and replaces the tool list with the primary route's allowed capabilities. A people search is two tools, not fifteen. A capability the route did not reach is absent. A reached capability that is blocked, such as `create-note` when `confirmed` is false, is described in `<mycelar-context>` and is not registered either.
 
 ```mermaid
 sequenceDiagram
@@ -125,9 +127,9 @@ sequenceDiagram
   User->>Chat: POST /api/chat message, confirmed
   Chat->>Advisor: user text and mycelar.routing.confirmed
   Advisor->>Runtime: route the user text
-  Runtime-->>Advisor: merged candidates
-  Note over Advisor,Model: a blocked tool is not in the schema
-  Advisor->>Model: mycelar-context and allowed tools only
+  Runtime-->>Advisor: primary route
+  Note over Advisor,Model: tools outside that route are not in the schema
+  Advisor->>Model: mycelar-context and the routed tools only
   alt tool is allowed
     Model->>Guard: tool call
     Guard->>Tool: capability is in the allowed snapshot
@@ -144,10 +146,10 @@ sequenceDiagram
 
 ## Spring AI alone
 
-Attach `twentyToolCallbackProvider` with `.tools()` or `defaultTools` and leave out `MycelarAdvisor`. Every `@Tool` on `TwentyTools` is then on the prompt. `confirmed` does not filter that list, so `createNote` is offered on every turn.
+Attach `twentyToolCallbackProvider` with `.tools()` or `defaultTools` and leave out `MycelarAdvisor`. All 15 `@Tool` methods on `TwentyTools` are then on every prompt, including writes the user did not ask for.
 
-This sample's controller does not call `.tools()` itself. `MycelarAdvisor` is what puts the per-turn subset on the prompt.
+This sample's controller does not call `.tools()` itself. `MycelarAdvisor` is what replaces that list with the routed subset.
 
 ## Graph versus the flat tool list
 
-`REQUIRES` is not a walk edge, so `create-note` stays out of the schema until `confirmed` is true. A flat `@Tool` list cannot express that: every method on `TwentyTools` would be offered on every turn, and `confirmed` would not remove `createNote`.
+A flat `@Tool` list has no path, so `search people named Ada` still offers company, opportunity, and note tools. The graph walk keeps the schema on the matched group: `people-read` contributes `searchPeople` and `getPerson`. `REQUIRES` is a second cut inside that schema. It is not a walk edge, so `create-note` can be on the path and still stay unregistered until `confirmed` is true.
