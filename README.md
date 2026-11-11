@@ -1,31 +1,28 @@
 # mycelar-example-twenty
 
-Spring AI sample: Mycelar routes a chat turn through a Twenty CRM sales-core graph, then exposes only the allowed tools as Bearer REST calls.
+Spring AI sample for Twenty CRM. `TwentyTools` exposes 15 tools. Mycelar puts only the primary route on the prompt, so a people lookup sends `searchPeople` and `getPerson`.
 
-Requires a sibling checkout of [mycelar](https://github.com/jplucinski/mycelar).
+Requires a sibling checkout of [mycelar](https://github.com/jplucinski/mycelar) at `../mycelar` (`includeBuild`). No MCP, no UI.
 
-## What it demonstrates
+## What the prompt contains
 
-- `MycelarAdvisor` puts only the routed tools on the prompt. `TwentyTools` has 15 methods; a people lookup registers `searchPeople` and `getPerson`.
-- `MycelarGraph` for Twenty people / companies / opportunities / notes
-- `createNote` stays off that list until `confirmed=true`, even when the route reaches notes
-- No MCP, no UI
+`MycelarAdvisor` runs before the model. It writes two things into the request:
 
-## Requirements
+- `<mycelar-context>` in the system message lists available capabilities, and blocked ones
+- `ToolCallingChatOptions.toolCallbacks` is the tool schema Spring sends with that same request
 
-- Java 21
-- Docker (for `TwentyClientTest` via Testcontainers + `twentycrm/twenty-app-dev`)
-- Twenty workspace + API key for `bootRun` (Settings → API & Webhooks)
-- An OpenAI-compatible key for `ChatModel` (`OPENAI_API_KEY`)
+`search people named Ada` registers `searchPeople` and `getPerson`. The other 13 methods are absent. `confirmed` does not choose this set.
 
-## Run
+A sentence that names two steps still gets one primary path. `mycelar.spring-ai.top-k` is 2, and the advisor keeps `RouteResult.primary()`.
 
-```bash
-export TWENTY_BASE_URL=https://api.twenty.com   # or https://your-host
-export TWENTY_API_KEY=...
-export OPENAI_API_KEY=...
-./gradlew bootRun
-```
+| User text | `confirmed` | Tools on the prompt |
+| --- | --- | --- |
+| search people named Ada | false | `searchPeople`, `getPerson` |
+| find Ada and update her email | false | `createPerson`, `updatePerson` |
+| find Ada and add a note | false | none; `create-note` is listed as blocked |
+| find Ada and add a note | true | `createNote` |
+
+`confirmed` is an advisor parameter, `mycelar.routing.confirmed`, not a tool argument. It only matters when the primary path reaches `create-note`. Until it is true, that capability stays in the context block and is not a callback.
 
 ```bash
 curl -s http://localhost:8080/api/chat \
@@ -33,33 +30,65 @@ curl -s http://localhost:8080/api/chat \
   -d '{"message":"search people named Ada","confirmed":false}'
 ```
 
-That turn registers `searchPeople` and `getPerson`. The other 13 methods stay off the schema. `confirmed` does not choose this set.
+## Chat turn
 
-A sentence that names two steps still gets one primary path. "Find Ada and update her email" registers `createPerson` and `updatePerson`. "Find Ada and add a note" stays on notes: with `confirmed` false the schema is empty, and with `confirmed` true it is only `createNote`.
+`ChatController` calls Spring `ChatClient`. The client starts the advisor chain. `MycelarAdvisor` routes the user text, writes the prompt above, and calls `chain.nextCall`. `MycelarToolCallingAdvisor` does not call `ChatModel`. On the first pass `doBeforeCall` sees no tool result and also calls `chain.nextCall`. `ChatModelCallAdvisor` is the end of the chain and runs `chatModel.call(prompt)`. The tool list is already on that prompt.
 
-```bash
-curl -s http://localhost:8080/api/chat \
-  -H 'content-type: application/json' \
-  -d '{"message":"find Ada and add a note","confirmed":false}'
+If the model returns text, the loop stops. If it returns a tool call, `ToolCallingManager` runs `MycelarGuardedToolCallback`. The guard checks the snapshot, `TwentyTools` calls Twenty through `RestClient`, and the body comes back as a `ToolResponseMessage`. The next `doBeforeCall` calls `MycelarAdvisor.route` with the user text plus that response and replaces `toolCallbacks` before `ChatModelCallAdvisor` runs again.
 
-curl -s http://localhost:8080/api/chat \
-  -H 'content-type: application/json' \
-  -d '{"message":"find Ada and add a note","confirmed":true}'
+```mermaid
+sequenceDiagram
+  actor User
+  participant Chat as ChatController
+  participant Client as ChatClient
+  participant Advisor as MycelarAdvisor
+  participant Calling as MycelarToolCallingAdvisor
+  participant Call as ChatModelCallAdvisor
+  participant Model as ChatModel
+  participant Tools as ToolCallingManager
+  participant Twenty as Twenty REST
+
+  User->>Chat: POST /api/chat
+  Chat->>Client: message and confirmed
+  Client->>Advisor: chain.nextCall
+  Note over Advisor: Writes the prompt, then continues the chain.<br/>mycelar-context lists available and blocked capabilities.<br/>toolCallbacks holds only the allowed tools.<br/>search people: searchPeople and getPerson.
+  Advisor->>Calling: chain.nextCall
+  Calling->>Call: doBeforeCall finds no tool result, then chain.nextCall
+  Call->>Model: chatModel.call(prompt)
+  Model-->>Call: ChatResponse
+  Call-->>Calling: ChatClientResponse
+  alt assistant text
+    Calling-->>Client: response
+  else tool call
+    Calling->>Tools: executeToolCalls
+    Tools->>Twenty: MycelarGuardedToolCallback, TwentyTools, RestClient
+    Twenty-->>Tools: response body
+    Tools-->>Calling: ToolResponseMessage
+    Calling->>Advisor: doBeforeCall calls route
+    Advisor-->>Calling: prompt with a new toolCallbacks list
+    Calling->>Call: chain.nextCall
+    Call->>Model: chatModel.call(prompt)
+    Model-->>Call: ChatResponse
+    Call-->>Calling: ChatClientResponse
+    Calling-->>Client: response
+  end
+  Client-->>Chat: content
+  Chat-->>User: ChatTurnResponse
 ```
 
-## Tests
+## Without Mycelar
 
-```bash
-./gradlew test
-```
+`TwentyConfiguration` builds `twentyToolCallbackProvider` and does not attach it in `ChatController`. The advisor chain is what puts tools on the prompt.
 
-`TwentyClientTest` starts `twentycrm/twenty-app-dev` in Docker (same image Twenty uses in CI) and calls the real `/rest` API with the seeded dev token. The first run can take **15–25 minutes** while the image migrates its embedded database; later runs are faster. Other tests use mocks or the in-memory graph. Chat tests use a fake `ChatModel` and do not call OpenAI.
-
-Without Docker, Testcontainers skips `TwentyClientTest` automatically. Docker Engine **29+** needs Testcontainers **1.21.4+** (this project sets `api.version=1.44` on the test JVM). On Windows, `src/test/resources/testcontainers.properties` points at `npipe:////./pipe/dockerDesktopLinuxEngine`; change it if your Docker context uses another pipe.
+Attach that provider with `.tools()` or `defaultTools` and leave out `MycelarAdvisor`. All 15 `@Tool` methods are then on every request. `confirmed` does not remove `createNote`.
 
 ## Graph
 
-`twenty` contains people, companies, opportunities, and notes. Each resource contains `read` and `write` nodes, and people and notes also contain `context`. Those nodes contain the capabilities, whose `operationId` equals the Spring AI tool name. The prompt receives the capabilities on the primary path, plus capability children of the groups on that path. Solid arrows are `CONTAINS`, dotted arrows are `EXPANDS_TO`, the thick arrow is `REQUIRES`, and labeled arrows are `RELATES_TO`. `REQUIRES` can still drop a reached capability: `create-note` stays blocked until `mycelar.routing.confirmed=true`.
+`twenty` contains people, companies, opportunities, and notes. Each resource contains `read` and `write`, and people and notes also contain `context`. Those nodes contain the capabilities. `operationId` equals the Spring AI tool name.
+
+The prompt receives capabilities on the primary path, including capability children of the groups on that path. `people-read` therefore contributes both `searchPeople` and `getPerson`.
+
+Solid arrows are `CONTAINS`. Dotted arrows are `EXPANDS_TO`. The thick arrow is `REQUIRES`. Labeled arrows are `RELATES_TO`. `REQUIRES` is not walked: `create-note` can be on the path and still stay unregistered until `mycelar.routing.confirmed=true`.
 
 ```mermaid
 flowchart TD
@@ -108,48 +137,25 @@ flowchart TD
   opportunitiesRead -->|RELATES_TO| opportunitiesWrite
 ```
 
-## Chat turn
+## Run
 
-`POST /api/chat` puts the user text on the prompt and `confirmed` on `mycelar.routing.confirmed`. `MycelarAdvisor` routes that text and replaces the tool list with the primary route's allowed capabilities. A people search is two tools, not fifteen. A capability the route did not reach is absent. A reached capability that is blocked, such as `create-note` when `confirmed` is false, is described in `<mycelar-context>` and is not registered either.
+- Java 21
+- Twenty workspace and API key (Settings → API & Webhooks)
+- An OpenAI-compatible key (`OPENAI_API_KEY`)
 
-```mermaid
-sequenceDiagram
-  actor User
-  participant Chat as ChatController
-  participant Advisor as MycelarAdvisor
-  participant Calling as MycelarToolCallingAdvisor
-  participant Runtime as MycelarRuntime
-  participant Model as ChatModel
-  participant Guard as Authorizer
-  participant Tool as TwentyTools
-  participant API as Twenty REST
-
-  User->>Chat: POST /api/chat message, confirmed
-  Chat->>Advisor: user text and mycelar.routing.confirmed
-  Advisor->>Runtime: route the user text
-  Runtime-->>Advisor: primary route
-  Note over Advisor,Model: tools outside that route are not in the schema
-  Advisor->>Model: mycelar-context and the routed tools only
-  alt tool is allowed
-    Model->>Guard: tool call
-    Guard->>Tool: capability is in the allowed snapshot
-    Tool->>API: Bearer /rest
-    API-->>Calling: JSON
-    Calling->>Runtime: route user text plus tool JSON
-    Runtime-->>Calling: merged route again
-    Calling->>Model: updated schema
-    Model-->>User: ChatTurnResponse
-  else tool is blocked
-    Model-->>User: reply without calling that tool
-  end
+```bash
+export TWENTY_BASE_URL=https://api.twenty.com   # or https://your-host
+export TWENTY_API_KEY=...
+export OPENAI_API_KEY=...
+./gradlew bootRun
 ```
 
-## Spring AI alone
+## Tests
 
-Attach `twentyToolCallbackProvider` with `.tools()` or `defaultTools` and leave out `MycelarAdvisor`. All 15 `@Tool` methods on `TwentyTools` are then on every prompt, including writes the user did not ask for.
+```bash
+./gradlew test
+```
 
-This sample's controller does not call `.tools()` itself. `MycelarAdvisor` is what replaces that list with the routed subset.
+`TwentyClientTest` starts `twentycrm/twenty-app-dev` in Docker and calls `/rest` with the seeded dev token. The first run can take 15–25 minutes while the image migrates its database. Other tests use mocks or the in-memory graph. Chat tests use a fake `ChatModel` and do not call OpenAI.
 
-## Graph versus the flat tool list
-
-A flat `@Tool` list has no path, so `search people named Ada` still offers company, opportunity, and note tools. The graph walk keeps the schema on the matched group: `people-read` contributes `searchPeople` and `getPerson`. `REQUIRES` is a second cut inside that schema. It is not a walk edge, so `create-note` can be on the path and still stay unregistered until `confirmed` is true.
+Without Docker, Testcontainers skips `TwentyClientTest`. Docker Engine 29+ needs Testcontainers 1.21.4+ (this project sets `api.version=1.44` on the test JVM). On Windows, `src/test/resources/testcontainers.properties` points at `npipe:////./pipe/dockerDesktopLinuxEngine`.
