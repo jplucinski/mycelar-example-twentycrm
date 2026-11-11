@@ -2,7 +2,7 @@
 
 Spring AI sample: Mycelar routes a chat turn through a Twenty CRM sales-core graph, then exposes only the allowed tools as Bearer REST calls.
 
-Requires a sibling checkout of [mycelar](https://github.com/jplucinski/mycelarus) at `../mycelar` (Gradle `includeBuild`). The directory name on disk is `mycelar`; the GitHub repo is `mycelarus`.
+Requires a sibling checkout of [mycelar](https://github.com/jplucinski/mycelar).
 
 ## What it demonstrates
 
@@ -115,7 +115,7 @@ sequenceDiagram
   actor User
   participant Chat as ChatController
   participant Advisor as MycelarAdvisor
-  participant Loop as MycelarToolCallingAdvisor
+  participant Calling as MycelarToolCallingAdvisor
   participant Runtime as MycelarRuntime
   participant Model as ChatModel
   participant Guard as Authorizer
@@ -132,10 +132,10 @@ sequenceDiagram
     Model->>Guard: tool call
     Guard->>Tool: capability is in the allowed snapshot
     Tool->>API: Bearer /rest
-    API-->>Loop: JSON
-    Loop->>Runtime: route user text plus tool JSON
-    Runtime-->>Loop: merged route again
-    Loop->>Model: updated schema
+    API-->>Calling: JSON
+    Calling->>Runtime: route user text plus tool JSON
+    Runtime-->>Calling: merged route again
+    Calling->>Model: updated schema
     Model-->>User: ChatTurnResponse
   else tool is blocked
     Model-->>User: reply without calling that tool
